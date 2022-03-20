@@ -1,154 +1,110 @@
-﻿using System.Collections.Generic;
-using System.IO;
+﻿namespace Multiformats.Codec.Codecs;
+
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Newtonsoft.Json;
 
-namespace Multiformats.Codec.Codecs
+/// <summary>
+/// Class JsonCodec.
+/// Implements the <see cref="ICodec" />
+/// </summary>
+/// <seealso cref="ICodec" />
+public partial class JsonCodec : ICodec
 {
-    public class JsonCodec : ICodec
+    /// <summary>
+    /// The header bytes
+    /// </summary>
+    public static readonly byte[] HeaderBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
+
+    /// <summary>
+    /// The header msgio bytes
+    /// </summary>
+    public static readonly byte[] HeaderMsgioBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderMsgioPath));
+
+    /// <summary>
+    /// The header msgio path
+    /// </summary>
+    private static readonly string headerMsgioPath = "/json/msgio";
+
+    /// <summary>
+    /// The header path
+    /// </summary>
+    private static readonly string headerPath = "/json";
+
+    /// <summary>
+    /// The msgio
+    /// </summary>
+    private readonly bool _msgio;
+
+    /// <summary>
+    /// The multicodec
+    /// </summary>
+    private readonly bool _multicodec;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="JsonCodec"/> class.
+    /// </summary>
+    /// <param name="multicodec">if set to <c>true</c> [multicodec].</param>
+    /// <param name="msgio">if set to <c>true</c> [msgio].</param>
+    protected JsonCodec(bool multicodec, bool msgio)
     {
-        public static readonly string HeaderPath = "/json";
-        public static readonly string HeaderMsgioPath = "/json/msgio";
-        public static readonly byte[] HeaderBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
-        public static readonly byte[] HeaderMsgioBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderMsgioPath));
+        _multicodec = multicodec;
+        _msgio = msgio;
+    }
 
-        public byte[] Header => _msgio ? HeaderMsgioBytes : HeaderBytes;
+    /// <summary>
+    /// Gets the header msgio path.
+    /// </summary>
+    /// <value>The header msgio path.</value>
+    public static string HeaderMsgioPath => headerMsgioPath;
 
-        private readonly bool _multicodec;
-        private readonly bool _msgio;
+    /// <summary>
+    /// Gets the header path.
+    /// </summary>
+    /// <value>The header path.</value>
+    public static string HeaderPath => headerPath;
 
-        protected JsonCodec(bool multicodec, bool msgio)
-        {
-            _multicodec = multicodec;
-            _msgio = msgio;
-        }
+    /// <summary>
+    /// Gets the header.
+    /// </summary>
+    /// <value>The header.</value>
+    public byte[] Header => _msgio ? HeaderMsgioBytes : HeaderBytes;
 
-        public static JsonCodec CreateMulticodec(bool msgio) => new JsonCodec(true, msgio);
-        public static JsonCodec CreateCodec(bool msgio) => new JsonCodec(false, msgio);
+    /// <summary>
+    /// Creates the codec.
+    /// </summary>
+    /// <param name="msgio">if set to <c>true</c> [msgio].</param>
+    /// <returns>JsonCodec.</returns>
+    public static JsonCodec CreateCodec(bool msgio)
+    {
+        return new(false, msgio);
+    }
 
-        public ICodecEncoder Encoder(Stream stream) => new JsonEncoder(stream, this);
+    /// <summary>
+    /// Creates the multicodec.
+    /// </summary>
+    /// <param name="msgio">if set to <c>true</c> [msgio].</param>
+    /// <returns>JsonCodec.</returns>
+    public static JsonCodec CreateMulticodec(bool msgio)
+    {
+        return new(true, msgio);
+    }
 
-        private class JsonEncoder : ICodecEncoder
-        {
-            private readonly Stream _stream;
-            private readonly JsonCodec _codec;
+    /// <summary>
+    /// Decoders the specified stream.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>ICodecDecoder.</returns>
+    public ICodecDecoder Decoder(Stream stream)
+    {
+        return new JsonDecoder(stream, this);
+    }
 
-            public JsonEncoder(Stream stream, JsonCodec codec)
-            {
-                _stream = stream;
-                _codec = codec;
-            }
-
-            public void Encode<T>(T obj)
-            {
-                if (_codec._multicodec)
-                    _stream.Write(_codec.Header, 0, _codec.Header.Length);
-
-                if (_codec._msgio)
-                {
-                    MessageIo.WriteMessage(_stream, Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(obj, Formatting.None)));
-                }
-                else
-                {
-                    var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(obj, Formatting.None) + '\n');
-                    _stream.Write(bytes, 0, bytes.Length);
-                }
-            }
-
-            public async Task EncodeAsync<T>(T obj, CancellationToken cancellationToken = default(CancellationToken))
-            {
-                if (_codec._multicodec)
-                    await _stream.WriteAsync(_codec.Header, 0, _codec.Header.Length, cancellationToken);
-
-                if (_codec._msgio)
-                {
-                    await MessageIo.WriteMessageAsync(_stream, Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(obj, Formatting.None)), cancellationToken: cancellationToken);
-                }
-                else
-                {
-                    var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(obj, Formatting.None) + '\n');
-                    await _stream.WriteAsync(bytes, 0, bytes.Length, cancellationToken);
-                }
-            }
-        }
-
-        public ICodecDecoder Decoder(Stream stream) => new JsonDecoder(stream, this);
-
-        private class JsonDecoder : ICodecDecoder
-        {
-            private readonly Stream _stream;
-            private readonly JsonCodec _codec;
-
-            public JsonDecoder(Stream stream, JsonCodec codec)
-            {
-                _stream = stream;
-                _codec = codec;
-            }
-
-            public T Decode<T>()
-            {
-                if (_codec._multicodec)
-                    Multicodec.ConsumeHeader(_stream, _codec.Header);
-
-                var json = string.Empty;
-                if (_codec._msgio)
-                {
-                    var bytes = MessageIo.ReadMessage(_stream);
-                    json = Encoding.UTF8.GetString(bytes);
-                }
-                else
-                {
-                    json = ReadLine(_stream);
-                }
-
-                return JsonConvert.DeserializeObject<T>(json);
-
-            }
-
-            public async Task<T> DecodeAsync<T>(CancellationToken cancellationToken = default(CancellationToken))
-            {
-                if (_codec._multicodec)
-                    await Multicodec.ConsumeHeaderAsync(_stream, _codec.Header, cancellationToken);
-
-                var json = string.Empty;
-                if (_codec._msgio)
-                {
-                    var bytes = await MessageIo.ReadMessageAsync(_stream, cancellationToken);
-                    json = Encoding.UTF8.GetString(bytes);
-                }
-                else
-                {
-                    json = await ReadLineAsync(_stream, cancellationToken);
-                }
-
-                return JsonConvert.DeserializeObject<T>(json);
-            }
-
-            private static string ReadLine(Stream stream)
-            {
-                var n = 0;
-                var buffer = new byte[4096];
-                var offset = 0;
-                while ((n = stream.Read(buffer, offset, 1)) != -1 && buffer[offset] != Multicodec.NewLine)
-                {
-                    offset++;
-                }
-                return Encoding.UTF8.GetString(buffer.Slice(0, offset)).Trim();
-            }
-
-            private static async Task<string> ReadLineAsync(Stream stream, CancellationToken cancellationToken = default(CancellationToken))
-            {
-                var n = 0;
-                var buffer = new byte[4096];
-                var offset = 0;
-                while ((n = await stream.ReadAsync(buffer, offset, 1, cancellationToken)) != -1 && buffer[offset] != Multicodec.NewLine)
-                {
-                    offset++;
-                }
-                return Encoding.UTF8.GetString(buffer.Slice(0, offset)).Trim();
-            }
-        }
+    /// <summary>
+    /// Encoders the specified stream.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>ICodecEncoder.</returns>
+    public ICodecEncoder Encoder(Stream stream)
+    {
+        return new JsonEncoder(stream, this);
     }
 }

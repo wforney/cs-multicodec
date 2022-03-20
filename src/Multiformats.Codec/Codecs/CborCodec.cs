@@ -1,94 +1,85 @@
-﻿using System.IO;
+﻿namespace Multiformats.Codec.Codecs;
+
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using PeterO.Cbor;
 
-namespace Multiformats.Codec.Codecs
+/// <summary>
+/// Class CborCodec.
+/// Implements the <see cref="ICodec" />.
+/// </summary>
+/// <seealso cref="ICodec" />
+public partial class CborCodec : ICodec
 {
-    public class CborCodec : ICodec
+    /// <summary>
+    /// The header bytes
+    /// </summary>
+    public static readonly byte[] HeaderBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
+
+    /// <summary>
+    /// The header path
+    /// </summary>
+    private static readonly string headerPath = "/cbor";
+
+    /// <summary>
+    /// The multicodec
+    /// </summary>
+    private readonly bool _multicodec;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CborCodec"/> class.
+    /// </summary>
+    /// <param name="multicodec">if set to <c>true</c> [multicodec].</param>
+    protected CborCodec(bool multicodec)
     {
-        public static readonly string HeaderPath = "/cbor";
-        public static readonly byte[] HeaderBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
+        _multicodec = multicodec;
+    }
 
-        public byte[] Header => HeaderBytes;
+    /// <summary>
+    /// Gets the header path.
+    /// </summary>
+    /// <value>The header path.</value>
+    public static string HeaderPath => headerPath;
 
-        private readonly bool _multicodec;
+    /// <summary>
+    /// Gets the header.
+    /// </summary>
+    /// <value>The header.</value>
+    public byte[] Header => HeaderBytes;
 
-        protected CborCodec(bool multicodec)
-        {
-            _multicodec = multicodec;
-        }
+    /// <summary>
+    /// Creates the codec.
+    /// </summary>
+    /// <returns>CborCodec.</returns>
+    public static CborCodec CreateCodec()
+    {
+        return new(false);
+    }
 
-        public static CborCodec CreateMulticodec() => new CborCodec(true);
-        public static CborCodec CreateCodec() => new CborCodec(false);
+    /// <summary>
+    /// Creates the multicodec.
+    /// </summary>
+    /// <returns>CborCodec.</returns>
+    public static CborCodec CreateMulticodec()
+    {
+        return new(true);
+    }
 
-        public ICodecEncoder Encoder(Stream stream) => new CBOREncoder(stream, this);
+    /// <summary>
+    /// Decoders the specified stream.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>ICodecDecoder.</returns>
+    public ICodecDecoder Decoder(Stream stream)
+    {
+        return new CBORDecoder(stream, this);
+    }
 
-        private class CBOREncoder : ICodecEncoder
-        {
-            private readonly Stream _stream;
-            private readonly CborCodec _codec;
-
-            public CBOREncoder(Stream stream, CborCodec codec)
-            {
-                _stream = stream;
-                _codec = codec;
-            }
-
-            public void Encode<T>(T obj)
-            {
-                if (_codec._multicodec)
-                    _stream.Write(_codec.Header, 0, _codec.Header.Length);
-
-                var cbor = CBORObject.FromObject(obj);
-                cbor.WriteTo(_stream);
-                _stream.Flush();
-            }
-
-            public async Task EncodeAsync<T>(T obj, CancellationToken cancellationToken = default(CancellationToken))
-            {
-                if (cancellationToken.IsCancellationRequested)
-                    return;
-
-                if (_codec._multicodec)
-                    await _stream.WriteAsync(_codec.Header, 0, _codec.Header.Length, cancellationToken);
-
-                var cbor = CBORObject.FromObject(obj);
-
-                cbor.WriteTo(_stream);
-                await _stream.FlushAsync(cancellationToken);
-            }
-        }
-
-        public ICodecDecoder Decoder(Stream stream) => new CBORDecoder(stream, this);
-
-        private class CBORDecoder : ICodecDecoder
-        {
-            private readonly Stream _stream;
-            private readonly CborCodec _codec;
-
-            public CBORDecoder(Stream stream, CborCodec codec)
-            {
-                _stream = stream;
-                _codec = codec;
-            }
-
-            public T Decode<T>()
-            {
-                if (_codec._multicodec)
-                    Multicodec.ConsumeHeader(_stream, _codec.Header);
-
-                return CBORObject.Read(_stream).ToObject<T>();
-            }
-
-            public async Task<T> DecodeAsync<T>(CancellationToken cancellationToken = default(CancellationToken))
-            {
-                if (_codec._multicodec)
-                    await Multicodec.ConsumeHeaderAsync(_stream, _codec.Header, cancellationToken);
-
-                return CBORObject.Read(_stream).ToObject<T>();
-            }
-        }
+    /// <summary>
+    /// Encoders the specified stream.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>ICodecEncoder.</returns>
+    public ICodecEncoder Encoder(Stream stream)
+    {
+        return new CBOREncoder(stream, this);
     }
 }

@@ -1,145 +1,138 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+﻿namespace Multiformats.Codec.Codecs;
+
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace Multiformats.Codec.Codecs
+/// <summary>
+/// The Mux codec class
+/// </summary>
+/// <seealso cref="ICodec" />
+public partial class MuxCodec : ICodec
 {
-    public class MuxCodec : ICodec
+    /// <summary>The header bytes</summary>
+    private static readonly byte[] headerBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
+
+    /// <summary>The header path</summary>
+    private static readonly string headerPath = "/multicodec";
+
+    /// <summary>The codecs</summary>
+    private readonly ICodec[] _codecs;
+
+    /// <summary>Initializes a new instance of the <see cref="MuxCodec"/> class.</summary>
+    /// <param name="codecs">The codecs.</param>
+    /// <param name="select">The select.</param>
+    /// <param name="wrap">if set to <c>true</c> [wrap].</param>
+    protected MuxCodec(IEnumerable<ICodec> codecs, SelectCodecDelegate? @select, bool wrap)
     {
-        public static readonly string HeaderPath = "/multicodec";
-        public static readonly byte[] HeaderBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
+        _codecs = codecs.ToArray();
+        Select = @select;
+        Wrap = wrap;
 
-        public byte[] Header => HeaderBytes;
+        Last = null;
+    }
 
-        private readonly ICodec[] _codecs;
-        public SelectCodecDelegate Select { get; set; }
-        public bool Wrap { get; set; }
+    /// <summary>
+    /// The select codec delegate.
+    /// </summary>
+    /// <param name="obj">The object.</param>
+    /// <param name="codecs">The codecs.</param>
+    /// <returns></returns>
+    public delegate ICodec SelectCodecDelegate(object? obj, ICodec[] codecs);
 
-        public ICodec[] Codecs => _codecs;
+    /// <summary>
+    /// Gets the header bytes.
+    /// </summary>
+    /// <value>The header bytes.</value>
+    public static byte[] HeaderBytes => headerBytes;
 
-        public ICodec Last { get; protected set; }
+    /// <summary>
+    /// Gets the header path.
+    /// </summary>
+    /// <value>The header path.</value>
+    public static string HeaderPath => headerPath;
 
-        public delegate ICodec SelectCodecDelegate(object obj, ICodec[] codecs);
-
-        protected MuxCodec(IEnumerable<ICodec> codecs, SelectCodecDelegate @select, bool wrap)
-        {
-            _codecs = codecs.ToArray();
-            Select = @select;
-            Wrap = wrap;
-
-            Last = null;
-        }
-
-        public static MuxCodec Standard => new MuxCodec(new ICodec[]
-        {
-            CborCodec.CreateMulticodec(),
-            JsonCodec.CreateMulticodec(false),
-            JsonCodec.CreateMulticodec(true),
-            ProtoBufCodec.CreateMulticodec(false),
-            ProtoBufCodec.CreateMulticodec(true),
-        }, SelectFirst, true);
-
-        public static MuxCodec Create(IEnumerable<ICodec> codecs, SelectCodecDelegate @select)
-            => new MuxCodec(codecs, @select ?? SelectFirst, true);
-
-        public static ICodec CodecWithHeader(byte[] header, IEnumerable<ICodec> codecs) => codecs.SingleOrDefault(c => c.Header.SequenceEqual(header));
-
-        private static ICodec SelectFirst(object obj, ICodec[] codecs) => codecs.First();
-
-        private ICodec GetCodec(object obj) => Select(obj, _codecs);
-
-        public ICodecEncoder Encoder(Stream stream) => new MuxEncoder(stream, this);
-
-        private class MuxEncoder : ICodecEncoder
-        {
-            private readonly Stream _stream;
-            private readonly MuxCodec _codec;
-
-            public MuxEncoder(Stream stream, MuxCodec codec)
+    /// <summary>Gets the standard.</summary>
+    /// <value>The standard.</value>
+    public static MuxCodec Standard =>
+        new(
+            new ICodec[]
             {
-                _stream = stream;
-                _codec = codec;
-            }
+                CborCodec.CreateMulticodec(),
+                JsonCodec.CreateMulticodec(false),
+                JsonCodec.CreateMulticodec(true),
+                ProtoBufCodec.CreateMulticodec(false),
+                ProtoBufCodec.CreateMulticodec(true),
+            },
+            SelectFirst,
+            true);
 
-            public void Encode<T>(T obj)
-            {
-                var subcodec = _codec.GetCodec(obj);
-                if (subcodec == null)
-                    throw new Exception("no suitable codec found");
+    /// <summary>Gets the codecs.</summary>
+    /// <value>The codecs.</value>
+    public ICodec[] Codecs => _codecs;
 
-                if (_codec.Wrap)
-                    _stream.Write(_codec.Header, 0, _codec.Header.Length);
+    /// <summary>Gets the header.</summary>
+    /// <value>The header.</value>
+    public byte[] Header => HeaderBytes;
 
-                _codec.Last = subcodec;
-                subcodec.Encoder(_stream).Encode(obj);
-            }
+    /// <summary>Gets or sets the last.</summary>
+    /// <value>The last.</value>
+    public ICodec? Last { get; protected set; }
 
-            public async Task EncodeAsync<T>(T obj, CancellationToken cancellationToken = default(CancellationToken))
-            {
-                var subcodec = _codec.GetCodec(obj);
-                if (subcodec == null)
-                    throw new Exception("no suitable codec found");
+    /// <summary>Gets or sets the select.</summary>
+    /// <value>The select.</value>
+    public SelectCodecDelegate? Select { get; set; }
 
-                if (_codec.Wrap)
-                    await _stream.WriteAsync(_codec.Header, 0, _codec.Header.Length, cancellationToken);
+    /// <summary>Gets or sets a value indicating whether this <see cref="MuxCodec"/> is wrap.</summary>
+    /// <value><c>true</c> if wrap; otherwise, <c>false</c>.</value>
+    public bool Wrap { get; set; }
 
-                _codec.Last = subcodec;
-                await subcodec.Encoder(_stream).EncodeAsync(obj, cancellationToken);
-            }
-        }
+    /// <summary>Codecs the with header.</summary>
+    /// <param name="header">The header.</param>
+    /// <param name="codecs">The codecs.</param>
+    /// <returns></returns>
+    public static ICodec? CodecWithHeader(byte[] header, IEnumerable<ICodec> codecs)
+    {
+        return codecs.SingleOrDefault(c => c.Header.SequenceEqual(header));
+    }
 
-        public ICodecDecoder Decoder(Stream stream) => new MuxDecoder(stream, this);
+    /// <summary>Creates the specified codecs.</summary>
+    /// <param name="codecs">The codecs.</param>
+    /// <param name="select">The select.</param>
+    /// <returns></returns>
+    public static MuxCodec Create(IEnumerable<ICodec> codecs, SelectCodecDelegate? @select)
+    {
+        return new(codecs, @select ?? SelectFirst, true);
+    }
 
-        private class MuxDecoder : ICodecDecoder
-        {
-            private readonly Stream _stream;
-            private readonly MuxCodec _codec;
+    /// <summary>Decoders the specified stream.</summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns></returns>
+    public ICodecDecoder Decoder(Stream stream)
+    {
+        return new MuxDecoder(stream, this);
+    }
 
-            public MuxDecoder(Stream stream, MuxCodec codec)
-            {
-                _stream = stream;
-                _codec = codec;
-            }
+    /// <summary>Encoders the specified stream.</summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns></returns>
+    public ICodecEncoder Encoder(Stream stream)
+    {
+        return new MuxEncoder(stream, this);
+    }
 
-            public T Decode<T>()
-            {
-                if (_codec.Wrap)
-                    Multicodec.ConsumeHeader(_stream, _codec.Header);
+    /// <summary>Selects the first.</summary>
+    /// <param name="obj">The object.</param>
+    /// <param name="codecs">The codecs.</param>
+    /// <returns></returns>
+    private static ICodec SelectFirst(object? obj, ICodec[] codecs)
+    {
+        return codecs.First();
+    }
 
-                var hdr = Multicodec.PeekHeader(_stream);
-                if (hdr == null || hdr.Length == 0)
-                    throw new EndOfStreamException();
-
-                var subcodec = _codec._codecs.SingleOrDefault(c => c.Header.SequenceEqual(hdr));
-                if (subcodec == null)
-                    throw new Exception($"no codec found for {Encoding.UTF8.GetString(hdr)}");
-
-                _codec.Last = subcodec;
-
-                return subcodec.Decoder(_stream).Decode<T>();
-            }
-
-            public async Task<T> DecodeAsync<T>(CancellationToken cancellationToken = default(CancellationToken))
-            {
-                if (_codec.Wrap)
-                    await Multicodec.ConsumeHeaderAsync(_stream, _codec.Header, cancellationToken);
-
-                var hdr = await Multicodec.PeekHeaderAsync(_stream, cancellationToken);
-                if (hdr == null || hdr.Length == 0)
-                    throw new EndOfStreamException();
-
-                var subcodec = _codec._codecs.SingleOrDefault(c => c.Header.SequenceEqual(hdr));
-                if (subcodec == null)
-                    throw new Exception($"no codec found for {Encoding.UTF8.GetString(hdr)}");
-
-                _codec.Last = subcodec;
-
-                return await subcodec.Decoder(_stream).DecodeAsync<T>(cancellationToken);
-            }
-        }
+    /// <summary>Gets the codec.</summary>
+    /// <param name="obj">The object.</param>
+    /// <returns></returns>
+    private ICodec? GetCodec(object? obj)
+    {
+        return Select?.Invoke(obj, _codecs);
     }
 }

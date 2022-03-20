@@ -1,13 +1,29 @@
-﻿using System.IO;
+﻿namespace Multiformats.Codec;
 
-namespace Multiformats.Codec
+/// <summary>
+/// The codec interface
+/// </summary>
+public interface ICodec
 {
-    public interface ICodec
-    {
-        byte[] Header { get; }
-        //string HeaderPath { get; }
+    /// <summary>
+    /// Gets the header.
+    /// </summary>
+    /// <value>The header.</value>
+    byte[] Header { get; }
 
-        ICodecEncoder Encoder(Stream stream);
-        ICodecDecoder Decoder(Stream stream);
-    }
+    //string HeaderPath { get; }
+
+    /// <summary>
+    /// Decoders the specified stream.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>ICodecDecoder.</returns>
+    ICodecDecoder Decoder(Stream stream);
+
+    /// <summary>
+    /// Encoders the specified stream.
+    /// </summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns>ICodecEncoder.</returns>
+    ICodecEncoder Encoder(Stream stream);
 }

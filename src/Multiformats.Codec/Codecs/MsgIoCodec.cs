@@ -1,98 +1,132 @@
-﻿using System;
-using System.IO;
+﻿namespace Multiformats.Codec.Codecs;
+
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace Multiformats.Codec.Codecs
+/// <summary>
+/// The message I/O codec class
+/// </summary>
+/// <seealso cref="ICodec" />
+public partial class MsgIoCodec : ICodec
 {
-    public class MsgIoCodec : ICodec
+    /// <summary>The header bytes</summary>
+    private static byte[] headerBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
+
+    /// <summary>The header path</summary>
+    private static string headerPath = "/msgio";
+
+    /// <summary>
+    /// The multicodec
+    /// </summary>
+    private readonly bool _multicodec;
+
+    /// <summary>Initializes a new instance of the <see cref="MsgIoCodec"/> class.</summary>
+    /// <param name="multicodec">if set to <c>true</c> [multicodec].</param>
+    protected MsgIoCodec(bool multicodec)
     {
-        public static string HeaderPath = "/msgio";
-        public static byte[] HeaderBytes = Multicodec.Header(Encoding.UTF8.GetBytes(HeaderPath));
+        _multicodec = multicodec;
+    }
 
-        public byte[] Header => HeaderBytes;
+    /// <summary>
+    /// Gets or sets the header bytes.
+    /// </summary>
+    /// <value>The header bytes.</value>
+    public static byte[] HeaderBytes { get => headerBytes; set => headerBytes = value; }
 
-        private readonly bool _multicodec;
+    /// <summary>
+    /// Gets or sets the header path.
+    /// </summary>
+    /// <value>The header path.</value>
+    public static string HeaderPath { get => headerPath; set => headerPath = value; }
 
-        protected MsgIoCodec(bool multicodec)
+    /// <summary>Gets the header.</summary>
+    /// <value>The header.</value>
+    public byte[] Header => HeaderBytes;
+
+    /// <summary>Creates the codec.</summary>
+    /// <returns></returns>
+    public static MsgIoCodec CreateCodec()
+    {
+        return new MsgIoCodec(false);
+    }
+
+    /// <summary>Creates the multicodec.</summary>
+    /// <returns></returns>
+    public static MsgIoCodec CreateMulticodec()
+    {
+        return new MsgIoCodec(true);
+    }
+
+    /// <summary>Decoders the specified stream.</summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns></returns>
+    public ICodecDecoder Decoder(Stream stream)
+    {
+        return new MsgIoDecoder(stream, this);
+    }
+
+    /// <summary>Encoders the specified stream.</summary>
+    /// <param name="stream">The stream.</param>
+    /// <returns></returns>
+    public ICodecEncoder Encoder(Stream stream)
+    {
+        return new MsgIoEncoder(stream, this);
+    }
+
+    /// <summary>
+    /// The message I/O encoder class
+    /// </summary>
+    /// <seealso cref="ICodecEncoder" />
+    private class MsgIoEncoder : ICodecEncoder
+    {
+        private readonly MsgIoCodec _codec;
+        private readonly Stream _stream;
+
+        /// <summary>Initializes a new instance of the <see cref="MsgIoEncoder"/> class.</summary>
+        /// <param name="stream">The stream.</param>
+        /// <param name="codec">The codec.</param>
+        public MsgIoEncoder(Stream stream, MsgIoCodec codec)
         {
-            _multicodec = multicodec;
+            _stream = stream;
+            _codec = codec;
         }
 
-        public static MsgIoCodec CreateMulticodec() => new MsgIoCodec(true);
-        public static MsgIoCodec CreateCodec() => new MsgIoCodec(false);
-
-        public ICodecEncoder Encoder(Stream stream) => new MsgIoEncoder(stream, this);
-
-        private class MsgIoEncoder : ICodecEncoder
+        /// <summary>Encodes the specified object.</summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="obj">The object.</param>
+        /// <exception cref="InvalidDataException">input must be byte array</exception>
+        public void Encode<T>(T obj)
         {
-            private readonly Stream _stream;
-            private readonly MsgIoCodec _codec;
-
-            public MsgIoEncoder(Stream stream, MsgIoCodec codec)
+            if (obj as object is not byte[] bytes)
             {
-                _stream = stream;
-                _codec = codec;
+                throw new InvalidDataException("input must be byte array");
             }
 
-            public void Encode<T>(T obj)
+            if (_codec._multicodec)
             {
-                var bytes = (byte[])(object) obj;
-                if (bytes == null)
-                    throw new InvalidDataException("input must be byte array");
-
-                if (_codec._multicodec)
-                    _stream.Write(_codec.Header, 0, _codec.Header.Length);
-
-                MessageIo.WriteMessage(_stream, bytes, flush: true);
+                _stream.Write(_codec.Header, 0, _codec.Header.Length);
             }
 
-            public async Task EncodeAsync<T>(T obj, CancellationToken cancellationToken = default(CancellationToken))
-            {
-                var bytes = (byte[])(object)obj;
-                if (bytes == null)
-                    throw new InvalidDataException("input must be byte array");
-
-                if (_codec._multicodec)
-                    await _stream.WriteAsync(_codec.Header, 0, _codec.Header.Length, cancellationToken);
-
-                await MessageIo.WriteMessageAsync(_stream, bytes, flush: true, cancellationToken: cancellationToken);
-            }
+            MessageIo.WriteMessage(_stream, bytes, flush: true);
         }
 
-        public ICodecDecoder Decoder(Stream stream) => new MsgIoDecoder(stream, this);
-
-        private class MsgIoDecoder : ICodecDecoder
+        /// <summary>Encodes the asynchronous.</summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="obj">The object.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <exception cref="InvalidDataException">input must be byte array</exception>
+        public async Task EncodeAsync<T>(T obj, CancellationToken cancellationToken = default)
         {
-            private readonly Stream _stream;
-            private readonly MsgIoCodec _codec;
-
-            public MsgIoDecoder(Stream stream, MsgIoCodec codec)
+            if (obj as object is not byte[] bytes)
             {
-                _stream = stream;
-                _codec = codec;
+                throw new InvalidDataException("input must be byte array");
             }
 
-            public T Decode<T>()
+            if (_codec._multicodec)
             {
-                if (_codec._multicodec)
-                    Multicodec.ConsumeHeader(_stream, _codec.Header);
-
-                var bytes = MessageIo.ReadMessage(_stream);
-
-                return (T)(object)bytes;
+                await _stream.WriteAsync(_codec.Header.AsMemory(0, _codec.Header.Length), cancellationToken);
             }
 
-            public async Task<T> DecodeAsync<T>(CancellationToken cancellationToken = default(CancellationToken))
-            {
-                if (_codec._multicodec)
-                    await Multicodec.ConsumeHeaderAsync(_stream, _codec.Header, cancellationToken);
-
-                var bytes = await MessageIo.ReadMessageAsync(_stream, cancellationToken);
-
-                return (T)(object)bytes;
-            }
+            await MessageIo.WriteMessageAsync(_stream, bytes, flush: true, cancellationToken: cancellationToken);
         }
     }
 }
